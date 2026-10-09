@@ -1,0 +1,3 @@
+[submodule "Adaptive_Filtering"]
+	path = Adaptive_Filtering
+	url = https://github.com/KIT-ISAS/Adaptive_Filtering.git

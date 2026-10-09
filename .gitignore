@@ -1,0 +1,26 @@
+# ipynb
+__pycache__
+
+models
+new_trained_models
+results
+images
+temporary_test_files
+temporary_data_sets
+logs
+new_logs
+
+# IDE
+.idea
+.vscode
+
+# venv
+virtualenv
+wslg
+.venv
+
+
+# container 
+.devcontainer/
+
+sequence_analysis_log.txt

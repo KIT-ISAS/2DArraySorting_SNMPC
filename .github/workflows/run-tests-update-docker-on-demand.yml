@@ -1,0 +1,185 @@
+# Run tests for CI with a docker image pulled from github packages or with a freshly created image if necessary.
+# Step 1: Creates and publishes a docker image to github packages if the docker file was changed or if the docker image does not exit.
+# Step 2: Runs the tests.
+# The order between the two main steps is ensured, i.e., if the docker file was changed, the image is updated first before the test is run.
+
+name: Run tests and update docker on demand
+
+on:
+  push:
+    branches: [ "main" ]  # INSERT THE NAME OF THE BRANCHES HERE
+    paths-ignore:
+      - '**/README.md' # do not trigger if only readme is changed
+  pull_request:
+    branches: [ "main" ]  # INSERT THE NAME OF THE BRANCH HERE
+    paths-ignore:
+      - '**/README.md' # do not trigger if only readme is changed
+  workflow_dispatch:  # allows to trigger the workflow manually
+    
+env:
+  REGISTRY: ghcr.io  # github packages registry  
+  IMAGE_NAME: ${{ github.repository }}  # this is something like <org>/<Repo_name>, e.g., KIT-ISAS/TestGithubCI
+    
+jobs:
+
+  paths-filter:
+    name: Check if the dockerfile was changed
+    runs-on: ubuntu-latest
+    outputs:
+      was_dockerfile_changed: ${{ steps.filter.outputs.dockerfile }}
+    steps:
+    - uses: actions/checkout@v3  
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          dockerfile:
+            - 'dockerfile/**'
+    - name: Print if dockerfile was changed
+      if: steps.filter.outputs.dockerfile == 'true'
+      run: echo "dockerfile was changed"
+    - name: Print if dockerfile was not changed
+      if: steps.filter.outputs.dockerfile != 'true'
+      run: echo "dockerfile was not changed"
+
+  get-docker-meta-data:
+    name: Get docker meta data (tags, version, labels) 
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}  # the version is usually given by the branch name
+      labels: ${{ steps.meta.outputs.labels }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Extract metadata (tags, version, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - name: Print docker image tags, version, and labels
+        run: echo "Tags:" "${{ steps.meta.outputs.tags }}" ; echo "Version:" "${{ steps.meta.outputs.version }}" ; echo "Labels:"  "${{ steps.meta.outputs.labels }}"
+
+  check-if-docker-image-exists:
+    name: Check if the docker image already exists
+    runs-on: ubuntu-latest
+    needs: [get-docker-meta-data]
+    outputs:
+      docker_exists:  ${{ steps.check.outputs.docker_exists }}
+    steps:
+      - name: Convert string
+        id: string
+        uses: ASzc/change-string-case-action@v5
+        with:
+          string: ${{ env.IMAGE_NAME }}
+      - name: Check package version 
+        id: check
+#       Use curl -H "Authorization: Bearer ${GHCR_TOKEN}" https://ghcr.io/v2/KIT-ISAS/testgithubci/tags/list in the above run command to show a list of all images
+#       Raw version without variables manifest=$(curl -H "Authorization: Bearer ${GHCR_TOKEN}" https://ghcr.io/v2/KIT-ISAS/testgithubci/manifests/main)
+#       See https://blog.atomist.com/github-container-registry/
+#       and https://github.com/orgs/community/discussions/26279
+# 
+#       The below works as follow: We search for the manifest of the desired container in ghcr.io in a two-step process: If the requested URL exists (step 1), we check whether the manifest has the desired format by 
+#       checking if the mediaType-key exists in the .json returned by the curl command (step 2). 
+        run: |
+          GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64)
+          manifest=$(curl -H "Authorization: Bearer ${GHCR_TOKEN}" https://${{ env.REGISTRY }}/v2/${{ steps.string.outputs.lowercase }}/manifests/${{ needs.get-docker-meta-data.outputs.version }})
+          echo "MANIFEST" $manifest
+          if [[ -z "$manifest" || "$manifest" == "404 page not found" ]]
+          then exists=false
+          else
+          filtered_manifest=$(curl -H "Authorization: Bearer ${GHCR_TOKEN}" https://${{ env.REGISTRY }}/v2/${{ steps.string.outputs.lowercase }}/manifests/${{ needs.get-docker-meta-data.outputs.version }} | jq '.mediaType')
+          echo "FILTERED MANIFEST" $filtered_manifest
+          if [[ "$filtered_manifest" != "null" ]]
+          then exists=true
+          else exists=false
+          fi
+          fi
+          echo "docker_exists=$exists" >> $GITHUB_OUTPUT
+      - name: Print if docker image exists
+        if:  steps.check.outputs.docker_exists == 'true'
+        run: echo "docker image ${{ needs.get-docker-meta-data.outputs.tags }} exists"
+      - name: Print if docker image does not exist
+        if:  steps.check.outputs.docker_exists != 'true'
+        run: echo "docker image ${{ needs.get-docker-meta-data.outputs.tags }} does not exist"
+          
+  build-and-push-image:
+    name: Build and push docker image
+    runs-on: ubuntu-latest
+    needs: [paths-filter, check-if-docker-image-exists, get-docker-meta-data]
+    if: ${{ (needs.paths-filter.outputs.was_dockerfile_changed == 'true') || (needs.check-if-docker-image-exists.outputs.docker_exists != 'true') }} 
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: dockerfile  # path to dockerfile
+          push: true
+          tags: ${{ needs.get-docker-meta-data.outputs.tags }}
+          labels: ${{ needs.get-docker-meta-data.outputs.labels }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: dockerfile  # path to dockerfile
+          push: true
+          tags: ${{ needs.get-docker-meta-data.outputs.tags }}
+          labels: ${{ needs.get-docker-meta-data.outputs.labels }}
+          
+  run-tests:
+    name: Run the tests
+    runs-on: ubuntu-latest
+    needs: [get-docker-meta-data, build-and-push-image]
+    if: always()
+    steps:
+      # 1. Festplattenplatz maximieren (schafft ca. 40-50GB Platz)
+      - name: Maximize build disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+
+      # 2. Swap-Datei erstellen (verhindert Exit Code 137 / OOM)
+      - name: Setup Swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Container mit RAM-Limit starten
+      - name: Run tests in Docker
+        run: |
+          docker pull ${{ needs.get-docker-meta-data.outputs.tags }}
+          docker run --rm \
+            --memory="6g" \
+            --memory-swap="12g" \
+            -v ${{ github.workspace }}:/mnt \
+            ${{ needs.get-docker-meta-data.outputs.tags }} \
+            python3 -m unittest discover /mnt/tests "*_test.py"
