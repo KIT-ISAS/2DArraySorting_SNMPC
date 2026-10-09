@@ -141,26 +141,6 @@ jobs:
     needs: [get-docker-meta-data, build-and-push-image]
     if: always()
     steps:
-      # 1. Festplattenplatz maximieren (schafft ca. 40-50GB Platz)
-      - name: Maximize build disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: false
-
-      # 2. Swap-Datei erstellen (verhindert Exit Code 137 / OOM)
-      - name: Setup Swap
-        run: |
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
-
       - name: Check out code
         uses: actions/checkout@v3
         with:
@@ -173,7 +153,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. Container mit RAM-Limit starten
+      # Container with RAM limit
       - name: Run tests in Docker
         run: |
           docker pull ${{ needs.get-docker-meta-data.outputs.tags }}
