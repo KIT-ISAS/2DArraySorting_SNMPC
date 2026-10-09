@@ -82,13 +82,13 @@ jobs:
 #       The below works as follow: We search for the manifest of the desired container in ghcr.io in a two-step process: If the requested URL exists (step 1), we check whether the manifest has the desired format by 
 #       checking if the mediaType-key exists in the .json returned by the curl command (step 2). 
         run: |
-          GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64)
-          manifest=$(curl -H "Authorization: Bearer ${GHCR_TOKEN}" https://${{ env.REGISTRY }}/v2/${{ steps.string.outputs.lowercase }}/manifests/${{ needs.get-docker-meta-data.outputs.version }})
+          GHCR_TOKEN=$(printf "%s" "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" | base64 | tr -d '\n')
+          manifest=$(curl -sS -H "Authorization: Basic $GHCR_TOKEN" https://${{ env.REGISTRY }}/v2/${{ steps.string.outputs.lowercase }}/manifests/${{ needs.get-docker-meta-data.outputs.version }} || true)
           echo "MANIFEST" $manifest
           if [[ -z "$manifest" || "$manifest" == "404 page not found" ]]
           then exists=false
           else
-          filtered_manifest=$(curl -H "Authorization: Bearer ${GHCR_TOKEN}" https://${{ env.REGISTRY }}/v2/${{ steps.string.outputs.lowercase }}/manifests/${{ needs.get-docker-meta-data.outputs.version }} | jq '.mediaType')
+          filtered_manifest=$(echo "$manifest" | jq '.mediaType')
           echo "FILTERED MANIFEST" $filtered_manifest
           if [[ "$filtered_manifest" != "null" ]]
           then exists=true
