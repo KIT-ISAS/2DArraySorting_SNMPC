@@ -1,0 +1,50 @@
+{
+    "N_R": 2,
+    "particle_sorter": "proximity_to_keep",
+    "accept_cost_weight": 0.5,
+    "use_only_terminal_costs": true,
+    "use_olf": true,
+    "debug": false,
+    "particle_model": {
+        "p_detect": 0.95,
+        "S_w": [0.0000001, 0.0000001],
+        "S_v": [0.01, 0.01]
+    },
+    "contact_model": {
+        "p_eject": [[0.0, 1.0, 1.0, 1.0], [0.0, 0.95, 0.0, 0.0]],
+        "use_sum_approximation": false
+    },
+    "max_branches": 2,
+    "retain_faf_candidate": false,
+
+    "adf": {
+        "use_numba": true,
+        "bvn_rect_cdf_backend": "genz",
+        "mc_comparison": {
+            "validate": true,
+            "show": true,
+            "plot_histograms": false,
+            "plot_partial_hit": false,
+            "save_dir": "/mnt/results/adf_mc_cost_eval",
+            "num_samples": 1000,
+            "num_micro_steps": 50,
+            "seed": 42,
+            "max_calls": 200,
+            "contact_mode": "geometric",
+            "partial_hit": {
+                "pi_lo": 0.3,
+                "pi_hi": 0.7,
+                "min_n_meas": 8
+            },
+            "cost_eval": {
+                "enable": true,
+                "max_calls": null,
+                "plot": true
+            }
+        }
+    },
+    "tree_search": {
+        "use_fast": true,
+        "use_numba": true
+    }
+}

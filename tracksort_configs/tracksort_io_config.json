@@ -1,0 +1,13 @@
+{
+  "data": {
+    "type": "tracking",
+    "nan_value": 0.0,
+    "camera_fov_width": 3008,
+    "camera_fov_height": 1952,
+    "lower_boundary": 0,
+    "upper_boundary": 1620,
+    "additive_noise_stddev": 0,
+    "time_normalization_constant": 18.0,
+    "label_idx": 2
+  }
+}
